@@ -1,0 +1,32 @@
+name: Fetch Shazam IL chart
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 5 * * *'   # daily 05:30 UTC (08:30 Israel summer time)
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch chart CSV
+        run: |
+          curl -sSL --retry 3 --retry-delay 10 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+            -o latest.csv \
+            "https://www.shazam.com/services/charts/csv/top-200/israel/"
+          # sanity check: refuse to commit an error page
+          grep -q "Rank,Artist,Title" latest.csv
+
+      - name: Commit if changed
+        run: |
+          git config user.name "chart-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add latest.csv
+          git diff --cached --quiet || git commit -m "chart update $(date -u +%F)"
+          git push
