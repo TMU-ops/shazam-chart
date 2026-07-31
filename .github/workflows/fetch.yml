@@ -4,7 +4,10 @@ on:
   push:
   workflow_dispatch:
   schedule:
-    - cron: '30 5 * * *'   # daily 05:30 UTC (08:30 Israel summer time)
+    # GitHub delays scheduled runs by hours on low-activity repos (observed ~6-7h),
+    # so run twice daily for better odds of a fresh same-day chart.
+    - cron: '0 2 * * *'    # 02:00 UTC — delayed run typically lands mid-morning
+    - cron: '30 5 * * *'   # 05:30 UTC — second chance
 
 permissions:
   contents: write
