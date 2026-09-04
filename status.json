@@ -1,11 +1,11 @@
 {
-  "checked_at": "2026-09-04T18:54:33Z",
-  "fetch_ok": false,
-  "source_used": "none",
-  "is_shazam": false,
-  "chart_date": "2026-09-02",
-  "age_days": 2,
-  "stale": true,
-  "attempts": "shazam_direct:http_403; shazam_via_jina:http_422; ",
-  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/33908188698"
+  "checked_at": "2026-09-04T18:57:16Z",
+  "fetch_ok": true,
+  "source_used": "shazam_direct",
+  "is_shazam": true,
+  "chart_date": "2026-09-04",
+  "age_days": 0,
+  "stale": false,
+  "attempts": "shazam_direct:ok(rows=200,date=4 September 2026,8795B) ua=1; ",
+  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/33908606433"
 }
