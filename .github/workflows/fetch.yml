@@ -1,16 +1,21 @@
 name: Fetch Shazam IL chart
 
 on:
-  push:
   workflow_dispatch:
+  push:
+    paths: ['.github/workflows/fetch.yml']
   schedule:
     # GitHub delays scheduled runs by hours on low-activity repos (observed ~6-7h),
     # so run twice daily for better odds of a fresh same-day chart.
-    - cron: '0 2 * * *'    # 02:00 UTC — delayed run typically lands mid-morning
-    - cron: '30 5 * * *'   # 05:30 UTC — second chance
+    - cron: '0 2 * * *'
+    - cron: '30 5 * * *'
 
 permissions:
   contents: write
+
+concurrency:
+  group: fetch-chart
+  cancel-in-progress: false
 
 jobs:
   fetch:
@@ -19,17 +24,144 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Fetch chart CSV
+        id: fetch
         run: |
-          curl -sSL --retry 3 --retry-delay 10 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-            -o latest.csv \
-            "https://www.shazam.com/services/charts/csv/top-200/israel/"
-          # sanity check: refuse to commit an error page
-          grep -q "Rank,Artist,Title" latest.csv
+          set -uo pipefail
+          URL="https://www.shazam.com/services/charts/csv/top-200/israel/"
 
-      - name: Commit if changed
+          # Shazam's CDN serves a poisoned 1.79MB HTML page as the *uncompressed*
+          # variant of every URL on the site (broken since 2026-09-02). The gzip
+          # variant still holds the real CSV, so --compressed is load-bearing.
+          # Also load-bearing: the trailing slash, no query string, no browser UA
+          # (a full Chrome UA trips bot mitigation and returns 405).
+
+          # Canonical byte layout: BOM, newline, date line, header, 200 rows.
+          normalize() {
+            hdr=$(grep -an '^Rank,Artist,Title' "$1" 2>/dev/null | head -1 | cut -d: -f1)
+            [ -n "$hdr" ] && [ "$hdr" -ge 2 ] || return 1
+            start=$((hdr - 1))
+            { printf '\357\273\277\n'; tail -n +"$start" "$1"; } > "$2"
+            [ -n "$(tail -c1 "$2")" ] || truncate -s -1 "$2"
+            return 0
+          }
+
+          # Echoes a reason string. Exit 0 only for a real, complete, dated chart.
+          validate() {
+            f="$1"
+            [ -s "$f" ] || { echo "empty"; return 1; }
+            sz=$(stat -c%s "$f")
+            [ "$sz" -lt 60000 ] || { echo "too_big(${sz}B)"; return 1; }
+            if head -c 512 "$f" | grep -qi '<html\|<!doctype'; then
+              echo "html_page(${sz}B)"; return 1; fi
+            grep -q '^Rank,Artist,Title$' "$f" || { echo "no_header(${sz}B)"; return 1; }
+            rows=$(grep -cE '^[0-9]+,' "$f")
+            [ "$rows" -eq 200 ] || { echo "rows=${rows}_expected_200"; return 1; }
+            grep -q '^1,' "$f" && grep -q '^200,' "$f" || { echo "rank_range_bad"; return 1; }
+            d=$(sed -n '1,3p' "$f" | grep -oE '[0-9]{1,2} [A-Z][a-z]+ 20[0-9]{2}' | head -1)
+            [ -n "$d" ] || { echo "no_date_line"; return 1; }
+            echo "ok(rows=${rows},date=${d},${sz}B)"
+            return 0
+          }
+
+          WINNER=""; WHY=""; LOG=""; why=""
+
+          # ---- SOURCE 1: Shazam direct, compressed ----
+          for i in $(seq 1 15); do
+            code=$(curl -s --compressed -m 45 -D hdr.txt -o raw.bin -w '%{http_code}' "$URL"); cx=$?
+            srv=$(grep -i '^x-served-by:' hdr.txt | tr -d '\r' | cut -d' ' -f2- | head -1)
+            bytes=$(stat -c%s raw.bin 2>/dev/null || echo 0)
+            if   [ "$cx" -ne 0 ];      then why="curl_exit_${cx}"
+            elif [ "$code" != "200" ]; then why="http_${code}"
+            elif ! normalize raw.bin cand.csv; then why="unparseable(${bytes}B)"
+            else why=$(validate cand.csv); fi
+            echo "shazam attempt ${i}: http=${code} bytes=${bytes} via=${srv} -> ${why}"
+            case "$why" in
+              ok*) WINNER="shazam_direct"; WHY="$why"; break ;;
+            esac
+            sleep 6
+          done
+          LOG="shazam_direct:${WHY:-$why}; "
+
+          # ---- SOURCE 2: same Shazam file over a different network path ----
+          if [ -z "$WINNER" ]; then
+            for i in 1 2 3; do
+              code=$(curl -s -m 60 -o raw.bin -w '%{http_code}' "https://r.jina.ai/${URL}"); cx=$?
+              bytes=$(stat -c%s raw.bin 2>/dev/null || echo 0)
+              if   [ "$cx" -ne 0 ];      then why="curl_exit_${cx}"
+              elif [ "$code" != "200" ]; then why="http_${code}"
+              elif ! normalize raw.bin cand.csv; then why="unparseable(${bytes}B)"
+              else why=$(validate cand.csv); fi
+              echo "jina attempt ${i}: http=${code} bytes=${bytes} -> ${why}"
+              case "$why" in
+                ok*) WINNER="shazam_via_jina"; WHY="$why"; break ;;
+              esac
+              sleep 10
+            done
+            LOG="${LOG}shazam_via_jina:${WHY:-$why}; "
+          fi
+
+          # ---- Promote only a validated candidate; latest.csv is untouchable otherwise ----
+          OK=false
+          if [ -n "$WINNER" ]; then OK=true; mv cand.csv latest.csv; fi
+          rm -f cand.csv raw.bin hdr.txt
+
+          # ---- Age is measured on the file the consumer actually reads ----
+          CD=$(sed -n '1,3p' latest.csv | grep -oE '[0-9]{1,2} [A-Z][a-z]+ 20[0-9]{2}' | head -1)
+          ISO=$(date -u -d "$CD" +%F 2>/dev/null || echo unknown)
+          if [ "$ISO" = "unknown" ]; then AGE=999
+          else AGE=$(( ( $(date -u +%s) - $(date -u -d "$ISO" +%s) ) / 86400 )); fi
+          if [ "$AGE" -ge 2 ]; then STALE=true; else STALE=false; fi
+
+          cat > status.json <<JSON
+          {
+            "checked_at": "$(date -u +%FT%TZ)",
+            "fetch_ok": ${OK},
+            "source_used": "${WINNER:-none}",
+            "is_shazam": ${OK},
+            "chart_date": "${ISO}",
+            "age_days": ${AGE},
+            "stale": ${STALE},
+            "attempts": "$(printf '%s' "$LOG" | sed 's/"/\\"/g')",
+            "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          }
+          JSON
+
+          {
+            echo "## Shazam IL chart fetch"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| fetch_ok | \`${OK}\` |"
+            echo "| source | \`${WINNER:-none}\` |"
+            echo "| chart date in latest.csv | \`${ISO}\` (age ${AGE}d) |"
+            echo "| attempts | \`${LOG}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "ok=${OK}"                >> "$GITHUB_OUTPUT"
+          echo "source=${WINNER:-none}"  >> "$GITHUB_OUTPUT"
+          echo "age=${AGE}"              >> "$GITHUB_OUTPUT"
+
+          if [ "$OK" != "true" ]; then
+            echo "::error title=Chart fetch FAILED - latest.csv left at ${ISO} (${AGE}d old)::${LOG}"
+            exit 1
+          fi
+          if [ "$AGE" -ge 3 ]; then
+            echo "::error title=Chart fetched OK but is ${AGE} days old (${ISO})::upstream may be frozen"
+            exit 1
+          fi
+          echo "::notice title=Chart OK via ${WINNER}::${WHY}"
+
+      - name: Commit CSV + status
+        if: always()
         run: |
-          git config user.name "chart-bot"
+          git config user.name  "chart-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add latest.csv
-          git diff --cached --quiet || git commit -m "chart update $(date -u +%F)"
+          git add -A
+          git diff --cached --quiet && { echo "nothing to commit"; exit 0; }
+          if [ "${{ steps.fetch.outputs.ok }}" = "true" ]; then
+            git commit -m "chart update $(date -u +%F) [${{ steps.fetch.outputs.source }}]"
+          else
+            git commit -m "FETCH FAILED $(date -u +%F) - latest.csv unchanged (${{ steps.fetch.outputs.age }}d old)"
+          fi
+          git pull --rebase --autostash || true
           git push
