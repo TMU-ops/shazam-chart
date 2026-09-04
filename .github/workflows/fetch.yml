@@ -32,8 +32,18 @@ jobs:
           # Shazam's CDN serves a poisoned 1.79MB HTML page as the *uncompressed*
           # variant of every URL on the site (broken since 2026-09-02). The gzip
           # variant still holds the real CSV, so --compressed is load-bearing.
-          # Also load-bearing: the trailing slash, no query string, no browser UA
-          # (a full Chrome UA trips bot mitigation and returns 405).
+          # Also load-bearing: the trailing slash and no query string.
+          # UA matters and differs by egress: from GitHub runners a bare curl UA
+          # gets a hard 403, while the short Mozilla UA historically got through;
+          # a FULL Chrome UA trips bot mitigation and returns 405. So cycle a few
+          # shapes per attempt and log which one wins.
+          ua_for() {
+            case $(( $1 % 3 )) in
+              0) printf '%s' "-A|Mozilla/5.0 (Windows NT 10.0; Win64; x64)" ;;
+              1) printf '%s' "-A|Mozilla/5.0 (Windows NT 10.0; Win64; x64)|-H|Accept: text/csv,*/*" ;;
+              2) printf '%s' "" ;;
+            esac
+          }
 
           # Canonical byte layout: BOM, newline, date line, header, 200 rows.
           normalize() {
@@ -63,29 +73,32 @@ jobs:
             return 0
           }
 
-          WINNER=""; WHY=""; LOG=""; why=""
+          WINNER=""; WHY=""; LOG=""; why=""; TALLY=""
 
           # ---- SOURCE 1: Shazam direct, compressed ----
           for i in $(seq 1 15); do
-            code=$(curl -s --compressed -m 45 -D hdr.txt -o raw.bin -w '%{http_code}' "$URL"); cx=$?
+            IFS='|' read -r -a UA <<< "$(ua_for "$i")" || true
+            code=$(curl -s --compressed -m 45 -D hdr.txt -o raw.bin -w '%{http_code}' "${UA[@]}" "$URL"); cx=$?
             srv=$(grep -i '^x-served-by:' hdr.txt | tr -d '\r' | cut -d' ' -f2- | head -1)
             bytes=$(stat -c%s raw.bin 2>/dev/null || echo 0)
             if   [ "$cx" -ne 0 ];      then why="curl_exit_${cx}"
             elif [ "$code" != "200" ]; then why="http_${code}"
             elif ! normalize raw.bin cand.csv; then why="unparseable(${bytes}B)"
             else why=$(validate cand.csv); fi
-            echo "shazam attempt ${i}: http=${code} bytes=${bytes} via=${srv} -> ${why}"
+            echo "shazam attempt ${i}: ua=$(( i % 3 )) http=${code} bytes=${bytes} via=${srv} -> ${why}"
+            TALLY="${TALLY}$(( i % 3 )):${code}/${why%%(*} "
             case "$why" in
               ok*) WINNER="shazam_direct"; WHY="$why"; break ;;
             esac
             sleep 6
           done
-          LOG="shazam_direct:${WHY:-$why}; "
+          if [ -n "$WINNER" ]; then LOG="shazam_direct:${WHY} ua=$(( i % 3 )); "
+          else LOG="shazam_direct FAILED [ua:code/why] ${TALLY}; "; fi
 
           # ---- SOURCE 2: same Shazam file over a different network path ----
           if [ -z "$WINNER" ]; then
             for i in 1 2 3; do
-              code=$(curl -s -m 60 -o raw.bin -w '%{http_code}' "https://r.jina.ai/${URL}"); cx=$?
+              code=$(curl -s -m 60 -o raw.bin -w '%{http_code}'                        -H 'Accept: text/plain' -H 'X-Return-Format: text'                        "https://r.jina.ai/${URL}"); cx=$?
               bytes=$(stat -c%s raw.bin 2>/dev/null || echo 0)
               if   [ "$cx" -ne 0 ];      then why="curl_exit_${cx}"
               elif [ "$code" != "200" ]; then why="http_${code}"
