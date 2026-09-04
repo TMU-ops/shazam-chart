@@ -1,0 +1,11 @@
+{
+  "checked_at": "2026-09-04T18:54:33Z",
+  "fetch_ok": false,
+  "source_used": "none",
+  "is_shazam": false,
+  "chart_date": "2026-09-02",
+  "age_days": 2,
+  "stale": true,
+  "attempts": "shazam_direct:http_403; shazam_via_jina:http_422; ",
+  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/33908188698"
+}
