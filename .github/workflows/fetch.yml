@@ -164,6 +164,48 @@ jobs:
           fi
           echo "::notice title=Chart OK via ${WINNER}::${WHY}"
 
+      - name: Archive snapshot + rebuild peaks
+        if: always()
+        run: |
+          set -uo pipefail
+          ISO="${{ steps.fetch.outputs.iso }}"
+
+          # File by CHART date, never run date: a chart that arrives a day late
+          # must not be archived as today's. A failed fetch archives nothing --
+          # latest.csv still holds an older chart and would forge a snapshot.
+          ARCHIVE=false
+          if [ "${{ steps.fetch.outputs.ok }}" = "true" ]; then
+            case "$ISO" in
+              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ARCHIVE=true ;;
+            esac
+          fi
+          if [ "$ARCHIVE" = "true" ]; then
+            mkdir -p history
+            cp latest.csv "history/${ISO}.csv"
+            echo "archived history/${ISO}.csv"
+          else
+            echo "no new snapshot (ok=${{ steps.fetch.outputs.ok }} iso=${ISO})"
+          fi
+
+          # peaks.csv is rebuilt from scratch every run, so there is no state to
+          # drift and a bad day heals itself on the next good one.
+          RC=0
+          python3 scripts/build_peaks.py | tee build.log || RC=1
+          {
+            echo ""
+            echo "### Weekly peaks"
+            echo ""
+            echo '```'
+            cat build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f build.log
+
+          if [ "$RC" != "0" ]; then
+            echo "::error title=peaks rebuild failed::peaks.csv may be stale"
+            exit 1
+          fi
+
       - name: Commit CSV + status
         if: always()
         run: |
