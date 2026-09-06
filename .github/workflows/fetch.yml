@@ -113,6 +113,45 @@ jobs:
             LOG="${LOG}shazam_via_jina:${WHY:-$why}; "
           fi
 
+          # ---- SOURCE 3: last-resort public proxies ----
+          # Individually unreliable (tested 06.09.26: allorigins 500, codetabs 522,
+          # cors.lol rate-limited) and reached only after jina has already failed.
+          # They cost nothing to try and validate() rejects whatever they get wrong,
+          # so a flaky source can only add availability, never corrupt latest.csv.
+          if [ -z "$WINNER" ]; then
+            PROXIES="https://api.allorigins.win/raw?url=${URL}"
+            PROXIES="${PROXIES} https://api.codetabs.com/v1/proxy?quest=${URL}"
+            PROXIES="${PROXIES} https://api.cors.lol/?url=${URL}"
+            for prox in $PROXIES; do
+              host=$(printf '%s' "$prox" | sed 's|https://||; s|/.*||')
+              code=$(curl -s -m 45 -o raw.bin -w '%{http_code}' "$prox"); cx=$?
+              bytes=$(stat -c%s raw.bin 2>/dev/null || echo 0)
+              if   [ "$cx" -ne 0 ];      then why="curl_exit_${cx}"
+              elif [ "$code" != "200" ]; then why="http_${code}"
+              elif ! normalize raw.bin cand.csv; then why="unparseable(${bytes}B)"
+              else why=$(validate cand.csv); fi
+              echo "proxy ${host}: http=${code} bytes=${bytes} -> ${why}"
+              LOG="${LOG}${host}:${why}; "
+              case "$why" in
+                ok*) WINNER="proxy_${host}"; WHY="$why"; break ;;
+              esac
+              sleep 5
+            done
+          fi
+
+          # ---- PROBE (diagnostic only, never promoted) ----
+          # The CSV endpoint started returning the site's HTML app shell on
+          # 05.09.26 while the chart PAGE still renders fine from a home
+          # connection. Parsing that page is the obvious plan B, but only if a
+          # GitHub runner can load it at all. Record that, decide later.
+          PGURL="https://www.shazam.com/charts/top-200/israel"
+          PAGE=$(curl -s -m 30 --compressed -o page.tmp -w '%{http_code}' -A "$UAS" "$PGURL")
+          PAGEB=$(stat -c%s page.tmp 2>/dev/null || echo 0)
+          if grep -q 'Album artwork for album titled' page.tmp 2>/dev/null; then
+            PAGEOK=true; else PAGEOK=false; fi
+          echo "page probe: http=${PAGE} bytes=${PAGEB} has_chart_markup=${PAGEOK}"
+          rm -f page.tmp
+
           # ---- Promote only a validated candidate; latest.csv is untouchable otherwise ----
           OK=false
           if [ -n "$WINNER" ]; then OK=true; mv cand.csv latest.csv; fi
@@ -135,6 +174,7 @@ jobs:
             "age_days": ${AGE},
             "stale": ${STALE},
             "attempts": "$(printf '%s' "$LOG" | sed 's/"/\\"/g')",
+            "page_probe": "http_${PAGE},${PAGEB}B,chart_markup=${PAGEOK}",
             "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
           JSON
