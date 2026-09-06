@@ -168,23 +168,36 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
-          ISO="${{ steps.fetch.outputs.iso }}"
+          # Read the chart date from the file being archived instead of passing
+          # it between steps. The first version took it from a step output that
+          # was never actually written, so ISO was empty, the guard rejected it,
+          # and the archive silently did nothing for every run.
+          CD=$(sed -n '1,3p' latest.csv | grep -oE '[0-9]{1,2} [A-Z][a-z]+ 20[0-9]{2}' | head -1)
+          ISO=$(date -u -d "$CD" +%F 2>/dev/null || echo unknown)
 
           # File by CHART date, never run date: a chart that arrives a day late
           # must not be archived as today's. A failed fetch archives nothing --
           # latest.csv still holds an older chart and would forge a snapshot.
-          ARCHIVE=false
           if [ "${{ steps.fetch.outputs.ok }}" = "true" ]; then
             case "$ISO" in
-              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ARCHIVE=true ;;
+              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+                mkdir -p history
+                cp latest.csv "history/${ISO}.csv"
+                echo "archived history/${ISO}.csv"
+                ;;
+              *)
+                echo "::error title=Unparseable chart date::date line was: ${CD:-<none>}"
+                exit 1
+                ;;
             esac
-          fi
-          if [ "$ARCHIVE" = "true" ]; then
-            mkdir -p history
-            cp latest.csv "history/${ISO}.csv"
-            echo "archived history/${ISO}.csv"
+            # A successful fetch that leaves no snapshot behind is the failure
+            # mode that just cost a day of data. Never let it pass quietly.
+            if [ ! -f "history/${ISO}.csv" ]; then
+              echo "::error title=Archive missing::history/${ISO}.csv was not written"
+              exit 1
+            fi
           else
-            echo "no new snapshot (ok=${{ steps.fetch.outputs.ok }} iso=${ISO})"
+            echo "fetch failed - no new snapshot to archive"
           fi
 
           # peaks.csv is rebuilt from scratch every run, so there is no state to
