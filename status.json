@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-09-06T09:36:27Z",
+  "checked_at": "2026-09-06T14:09:00Z",
   "fetch_ok": true,
   "source_used": "shazam_via_jina",
   "is_shazam": true,
@@ -7,10 +7,10 @@
   "age_days": 0,
   "stale": false,
   "attempts": "shazam_direct FAILED [ua:code/why] 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 ; shazam_via_jina:ok(rows=200,date=6 September 2026,9029B); ",
-  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/34025051113",
+  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/34038172293",
   "peak_window_start": "2026-08-31",
   "peak_window_end": "2026-09-06",
   "peak_window_days": 6,
-  "peaks_songs": 274,
-  "prev_window_days": 7
+  "prev_window_days": 7,
+  "peaks_songs": 274
 }
