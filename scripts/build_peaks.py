@@ -8,15 +8,16 @@ written -- and a song that charted mid-week can be gone entirely. Measured over
 2026-08-30..09-05: 119 of the 200 songs in the Friday chart had been higher
 earlier that week, and 71 more had been in the top 200 and dropped out.
 
-peaks.csv answers, per song: where is it now, how high did it get this week, and
-when. Rebuilt from scratch on every run -- no incremental state to drift or
-corrupt, so a bad day heals itself on the next good one.
+peaks.csv answers, per song: where it is now, the best rank it reached this
+week, and the best it reached last week to compare against. Rebuilt from scratch on
+every run -- no incremental state to drift, so a bad day heals itself on the
+next good one.
 """
 import csv, io, json, os, re, sys, datetime
 
 ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATUS = os.path.join(ROOT, "status.json")
 HIST   = os.path.join(ROOT, "history")
+STATUS = os.path.join(ROOT, "status.json")
 OUT    = os.path.join(ROOT, "peaks.csv")
 WINDOW = 7    # days, inclusive, ending at the newest snapshot
 KEEP   = 60   # days of snapshots to retain on disk
@@ -42,10 +43,26 @@ def key(artist, title):
     merging two different songs, and the agent does the real artist/title
     matching against the sheet."""
     def norm(s):
-        s = s.replace("\u2019", "'").replace("\u2018", "'")
-        s = s.replace("\u201c", '"').replace("\u201d", '"')
+        s = s.replace(u"\u2019", "'").replace(u"\u2018", "'")
+        s = s.replace(u"\u201c", '"').replace(u"\u201d", '"')
         return re.sub(r"\s+", " ", s).strip().lower()
     return (norm(artist), norm(title))
+
+
+def collect(dates):
+    """-> {key: [ranks]}, {key: (artist, title)}, [dates actually read]"""
+    ranks, display, used = {}, {}, []
+    for d in dates:
+        rows = read_chart(os.path.join(HIST, d + ".csv"))
+        if not rows:
+            print("skipping unreadable snapshot %s" % d)
+            continue
+        used.append(d)
+        for rank, artist, title in rows:
+            k = key(artist, title)
+            display[k] = (artist, title)          # newest spelling wins
+            ranks.setdefault(k, []).append((d, rank))
+    return ranks, display, used
 
 
 def main():
@@ -57,49 +74,40 @@ def main():
         sys.exit("history/ has no dated snapshots")
 
     newest = datetime.date.fromisoformat(dates[-1])
-    start  = newest - datetime.timedelta(days=WINDOW - 1)
-    window = [d for d in dates if datetime.date.fromisoformat(d) >= start]
+    this_start = newest - datetime.timedelta(days=WINDOW - 1)
+    prev_start = this_start - datetime.timedelta(days=WINDOW)
 
-    best, seen, display, current = {}, {}, {}, {}
-    used = []
-    for d in window:
-        rows = read_chart(os.path.join(HIST, d + ".csv"))
-        if not rows:
-            print("skipping unreadable snapshot %s" % d)
-            continue
-        used.append(d)
-        for rank, artist, title in rows:
-            k = key(artist, title)
-            display[k] = (artist, title)          # newest spelling wins
-            seen[k] = seen.get(k, 0) + 1
-            if k not in best or rank < best[k][0]:
-                best[k] = (rank, d)
-        if d == window[-1]:
-            current = {key(a, t): r for r, a, t in rows}
+    this_days = [d for d in dates if datetime.date.fromisoformat(d) >= this_start]
+    prev_days = [d for d in dates
+                 if prev_start <= datetime.date.fromisoformat(d) < this_start]
+
+    cur, display, used = collect(this_days)
+    prev, _, prev_used = collect(prev_days)
+    if not used:
+        sys.exit("no readable snapshot in the current window")
+
+    last_day = used[-1]
+    current = {k: r for k, r in ((k, dict(v).get(last_day)) for k, v in cur.items())
+               if r is not None}
 
     out = []
-    for k, (peak, peak_date) in best.items():
+    for k, pairs in cur.items():
         artist, title = display[k]
+        peak_date, peak = min(((d, r) for d, r in pairs), key=lambda x: x[1])
+        p = prev.get(k)
         out.append((artist, title,
                     str(current[k]) if k in current else "OUT",
-                    peak, peak_date, seen[k]))
+                    peak, peak_date, len(pairs),
+                    min(r for _, r in p) if p else ""))
     # Best of the week first; that is the number Tomer copies into the sheet.
     out.sort(key=lambda r: (r[3], r[0].lower(), r[1].lower()))
 
     with io.open(OUT, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
-        w.writerow(["Artist", "Title", "CurrentRank", "PeakRank", "PeakDate", "DaysSeen"])
+        w.writerow(["Artist", "Title", "CurrentRank", "PeakRank",
+                    "PeakDate", "DaysSeen", "PrevWeekPeak"])
         w.writerows(out)
 
-    # Prune old snapshots so the folder stays bounded.
-    cutoff = newest - datetime.timedelta(days=KEEP)
-    pruned = 0
-    for d in dates:
-        if datetime.date.fromisoformat(d) < cutoff:
-            os.remove(os.path.join(HIST, d + ".csv")); pruned += 1
-
-    # The agent already reads status.json for freshness; put the window there
-    # too, so peaks.csv can stay pure data with a plain header.
     if os.path.exists(STATUS):
         try:
             with io.open(STATUS, encoding="utf-8") as f:
@@ -107,21 +115,26 @@ def main():
             st["peak_window_start"] = used[0]
             st["peak_window_end"]   = used[-1]
             st["peak_window_days"]  = len(used)
+            st["prev_window_days"]  = len(prev_used)
             st["peaks_songs"]       = len(out)
-            with io.open(STATUS, "w", encoding="utf-8", newline="\n") as f:
-                json.dump(st, f, ensure_ascii=False, indent=2)
-                f.write("\n")
+            with io.open(STATUS, "w", encoding="utf-8", newline="") as f:
+                f.write(json.dumps(st, ensure_ascii=False, indent=2) + "\n")
         except Exception as e:
             print("could not update status.json: %s" % e)
 
-    print("window   : %s .. %s (%d snapshots used)" % (used[0], used[-1], len(used)))
-    print("songs    : %d (%d currently charting, %d dropped out)"
+    cutoff = newest - datetime.timedelta(days=KEEP)
+    pruned = 0
+    for d in dates:
+        if datetime.date.fromisoformat(d) < cutoff:
+            os.remove(os.path.join(HIST, d + ".csv")); pruned += 1
+
+    print("window   : %s .. %s (%d snapshots)" % (used[0], used[-1], len(used)))
+    print("previous : %s (%d snapshots)"
+          % ((prev_used[0] + " .. " + prev_used[-1]) if prev_used else "none", len(prev_used)))
+    print("songs    : %d (%d charting now, %d dropped out)"
           % (len(out), sum(1 for r in out if r[2] != "OUT"),
              sum(1 for r in out if r[2] == "OUT")))
     print("pruned   : %d snapshot(s) older than %d days" % (pruned, KEEP))
-    print("PEAK_WINDOW_START=%s" % used[0])
-    print("PEAK_WINDOW_END=%s"   % used[-1])
-    print("PEAK_WINDOW_DAYS=%d"  % len(used))
 
 
 if __name__ == "__main__":

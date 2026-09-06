@@ -5,9 +5,11 @@ Daily snapshot of the official Shazam Israel Top 200 chart (public data, rolling
 Files the consumer reads:
 
 - `latest.csv` — the most recent chart, fetched twice daily (02:00 and 05:30 UTC) by GitHub Actions.
-- `peaks.csv` — per song over the last 7 days: `Artist,Title,CurrentRank,PeakRank,PeakDate,DaysSeen`.
-  `CurrentRank` is `OUT` for a song that charted during the window but has since
-  dropped out of the top 200. Sorted best peak first.
+- `peaks.csv` — per song: `Artist,Title,CurrentRank,PeakRank,PeakDate,DaysSeen,PrevWeekPeak`.
+  `PeakRank` is the best rank over the last 7 days, `PrevWeekPeak` the best over the
+  7 days before that (empty if the song did not chart then). `CurrentRank` is `OUT`
+  for a song that charted during the window but has since dropped out of the top 200.
+  Sorted best peak first.
 - `status.json` — fetch health (`fetch_ok`, `source_used`, `chart_date`, `age_days`,
   `stale`, per-attempt tally) plus the peak window (`peak_window_start/end/days`).
 - `history/YYYY-MM-DD.csv` — one archived chart per day, filed by chart date, kept 60 days.
