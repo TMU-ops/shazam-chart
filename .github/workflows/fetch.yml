@@ -145,7 +145,7 @@ jobs:
           # connection. Parsing that page is the obvious plan B, but only if a
           # GitHub runner can load it at all. Record that, decide later.
           PGURL="https://www.shazam.com/charts/top-200/israel"
-          PAGE=$(curl -s -m 30 --compressed -o page.tmp -w '%{http_code}' -A "$UAS" "$PGURL")
+          PAGE=$(curl -s -m 30 --compressed -o page.tmp -w '%{http_code}' -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$PGURL")
           PAGEB=$(stat -c%s page.tmp 2>/dev/null || echo 0)
           if grep -q 'Album artwork for album titled' page.tmp 2>/dev/null; then
             PAGEOK=true; else PAGEOK=false; fi
