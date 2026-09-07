@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-09-06T15:27:21Z",
+  "checked_at": "2026-09-07T06:51:54Z",
   "fetch_ok": true,
   "source_used": "shazam_via_jina",
   "is_shazam": true,
-  "chart_date": "2026-09-06",
+  "chart_date": "2026-09-07",
   "age_days": 0,
   "stale": false,
-  "attempts": "shazam_direct FAILED [ua:code/why] 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 ; shazam_via_jina:ok(rows=200,date=6 September 2026,9029B); ",
+  "attempts": "shazam_direct FAILED [ua:code/why] 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 1:403/http_403 2:403/http_403 0:403/http_403 ; shazam_via_jina:ok(rows=200,date=7 September 2026,9036B); ",
   "page_probe": "http_403,425B,chart_markup=false",
-  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/34042273306",
-  "peak_window_start": "2026-08-31",
-  "peak_window_end": "2026-09-06",
+  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/34092604334",
+  "peak_window_start": "2026-09-01",
+  "peak_window_end": "2026-09-07",
   "peak_window_days": 6,
   "prev_window_days": 7,
-  "peaks_songs": 274
+  "peaks_songs": 277
 }
