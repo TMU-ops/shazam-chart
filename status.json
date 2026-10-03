@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-10-02T11:13:58Z",
+  "checked_at": "2026-10-03T07:21:18Z",
   "fetch_ok": true,
   "source_used": "shazam_direct",
   "is_shazam": true,
-  "chart_date": "2026-10-02",
+  "chart_date": "2026-10-03",
   "age_days": 0,
   "stale": false,
-  "attempts": "shazam_direct:ok(rows=200,date=2 October 2026,8803B) ua=1; ",
+  "attempts": "shazam_direct:ok(rows=200,date=3 October 2026,8909B) ua=1; ",
   "page_probe": "http_403,424B,chart_markup=false",
-  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/36999856092",
-  "peak_window_start": "2026-09-26",
-  "peak_window_end": "2026-10-02",
+  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/37106063045",
+  "peak_window_start": "2026-09-27",
+  "peak_window_end": "2026-10-03",
   "peak_window_days": 7,
   "prev_window_days": 7,
-  "peaks_songs": 277
+  "peaks_songs": 274
 }
