@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-24T06:42:12Z",
+  "checked_at": "2026-10-24T09:42:43Z",
   "fetch_ok": true,
   "source_used": "shazam_direct",
   "is_shazam": true,
@@ -8,7 +8,7 @@
   "stale": false,
   "attempts": "shazam_direct:ok(rows=200,date=24 October 2026,8658B) ua=1; ",
   "page_probe": "http_403,425B,chart_markup=false",
-  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/40071239849",
+  "run_url": "https://github.com/TMU-ops/shazam-chart/actions/runs/40083028066",
   "peak_window_start": "2026-10-18",
   "peak_window_end": "2026-10-24",
   "peak_window_days": 7,
